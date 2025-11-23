@@ -16,6 +16,10 @@ button:hover{background:#005fcc;}
 .sm{font-size:0.9em;color:#666;margin-top:1%;}
 .date-item{display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding:5px;border:1px solid #ccc;border-radius:6px;}
 .date-item button{width:auto;padding:0 5px;background:#d00;margin:0;font-size:0.8em;}
+.page-row{display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding:6px;border:1px solid #e6e6e6;border-radius:8px;}
+.page-row .title{cursor:pointer;flex:1;}
+.small-btn{padding:6px 8px;border-radius:6px;border:0;cursor:pointer;margin-left:6px;}
+.del-page{background:#d00;color:#fff;}
 @media(max-width:500px){
  .tl{flex-direction:column;align-items:flex-start;}
  .add{margin-top:0.5em;}
@@ -83,7 +87,16 @@ button:hover{background:#005fcc;}
   <input id="se" placeholder="الإيميل" />
   <input id="sp" placeholder="الباسورد" />
   <textarea id="sc" placeholder="محتوى فقرته"></textarea>
-  <input id="sd" placeholder="المواعيد مفصولة بفواصل (اليوم/الشهر)" />
+
+  <!-- جديد: إضافة مواعيد واحدة واحدة -->
+  <div style="margin-top:8px;">
+    <div style="display:flex;gap:6px;">
+      <input id="sd_single" placeholder="أدخل موعد (يوم/شهر)" />
+      <button id="addSdBtn" onclick="pushTempDate()" style="width:auto;padding:8px;">أضف موعد</button>
+    </div>
+    <div id="sdList" style="margin-top:8px;"></div>
+  </div>
+
   <button onclick="sav()">إضافة</button>
   <button onclick="bckp()" style="background:#aaa">رجوع</button>
  </div>
@@ -120,17 +133,33 @@ const db = firebase.database();
 
 const ADM_E="Mohamed.hesham@web", ADM_P="Mohamed.hesham";
 let ADM=false;
-const def=["quran","presentation","hikma","maqal","info","qs","hadith","anthem"];
-const names={quran:"القرآن",presentation:"التقديم",hikma:"الحكمة",maqal:"المقال",info:"هل تعلم؟",qs:"الأسئلة",hadith:"الحديث",anthem:"النشيد الوطني"};
 let curpg="", curst=null, edi="";
 
-// ===== Initialize Database =====
+// مؤقت لتخزين المواعيد أثناء إضافة طالب واحد-واحد
+let tmpDates = [];
+
+// ===== Default names (fallback) =====
+const namesFallback={quran:"القرآن",presentation:"التقديم",hikma:"الحكمة",maqal:"المقال",info:"هل تعلم؟",qs:"الأسئلة",hadith:"الحديث",anthem:"النشيد الوطني"};
+
+// ===== Initialize Database defaults if مفقود =====
 function init(){
- def.forEach(p=>{
-   let ref = db.ref('pgs/'+p);
-   ref.once('value', snap=>{
-     if(!snap.exists()) ref.set({sts:[]});
-   });
+ // تأكد من وجود العقدة pgs
+ db.ref('pgs').once('value', snap=>{
+   if(!snap.exists()){
+     // إنشاء الافتراضيات
+     const initObj = {};
+     for(const k in namesFallback) initObj[k] = {sts:[], title: namesFallback[k]};
+     db.ref('pgs').set(initObj);
+   } else {
+     // للتأكد: أي صفحة بدون title نضيف title افتراضي
+     snap.forEach(child=>{
+       if(!child.hasChild('title')){
+         const key = child.key;
+         const ttl = namesFallback[key] || key;
+         db.ref('pgs/'+key+'/title').set(ttl);
+       }
+     });
+   }
  });
 }
 init();
@@ -146,11 +175,11 @@ function lgf(){
  }
  db.ref('pgs').once('value', snap=>{
    let found=false;
-   def.forEach(k=>{
-     snap.child(k).child('sts').forEach(s=>{
+   snap.forEach(page=>{
+     page.child('sts').forEach(s=>{
        if(s.val().e===e && s.val().p===p){
          ADM=false;
-         curpg=k;
+         curpg=page.key;
          curst={key:s.key,...s.val()};
          document.getElementById("lg").style.display="none";
          document.getElementById("guestBtn").style.display="none";
@@ -165,19 +194,48 @@ function lgf(){
 
 function gst(){ADM=false; shmn();}
 
-// ===== Show menu =====
+// ===== Show menu (يقرأ الصفحات من DB) =====
 function shmn(){
  document.getElementById("lg").style.display="none";
  document.getElementById("mn").style.display="block";
- let pl=document.getElementById("plist"); pl.innerHTML="";
- def.forEach(k=>{
-   let d=document.createElement("div");
-   d.className="it";
-   d.innerText=names[k];
-   d.onclick=()=>op(k);
-   pl.appendChild(d);
+ document.getElementById("plist").innerHTML="";
+ // جلب كل الصفحات من DB
+ db.ref('pgs').once('value', snap=>{
+   snap.forEach(p=>{
+     const key = p.key;
+     const ttl = (p.val() && p.val().title) ? p.val().title : key;
+     const row = document.createElement('div');
+     row.className='page-row';
+     const tdiv = document.createElement('div');
+     tdiv.className='title';
+     tdiv.innerText = ttl;
+     tdiv.onclick = ()=>op(key);
+     row.appendChild(tdiv);
+
+     if(ADM){
+       // زر تعديل العنوان (اختياري) — هنا مجرد حذف حسب طلبك
+       const delBtn = document.createElement('button');
+       delBtn.className='small-btn del-page';
+       delBtn.innerText='حذف';
+       delBtn.onclick = (ev)=>{ ev.stopPropagation(); delPage(key, ttl); };
+       row.appendChild(delBtn);
+     }
+
+     document.getElementById('plist').appendChild(row);
+   });
+
+   // عرض إضافة صفحة للمدير
+   document.getElementById("addNewPage").style.display = ADM ? "block" : "none";
  });
- if(ADM) document.getElementById("addNewPage").style.display="block";
+}
+
+// ===== حذف صفحة =====
+function delPage(key, title){
+ if(!confirm("هل تريد حذف الفقرة '"+title+"'؟ هذه العملية تحذف كل طلابها.")) return;
+ db.ref('pgs/'+key).remove().then(()=>{
+   // إعادة تحميل القائمة
+   shmn();
+ }).catch(err=>{ alert("خطأ بالحذف: "+err.message); });
 }
 
 // ===== Open page =====
@@ -185,7 +243,10 @@ function op(k){
  curpg=k;
  document.getElementById("mn").style.display="none";
  document.getElementById("pg").style.display="block";
- document.getElementById("pgn").innerText=names[k];
+ // قراءة عنوان الصفحة من DB
+ db.ref('pgs/'+k+'/title').once('value', s=>{
+   document.getElementById("pgn").innerText = s.exists() ? s.val() : k;
+ });
  document.getElementById("ad").style.display=ADM?"block":"none";
  shsts();
 }
@@ -199,7 +260,9 @@ function shsts(){
      let data = s.val();
      let d=document.createElement("div");
      d.className="it";
-     d.innerHTML = data.n + (ADM?`<br><span style='font-size:13px;'><span style='color:#007bff;cursor:pointer' onclick='edt("${s.key}")'>تعديل</span> | <span style='color:#d00;cursor:pointer' onclick='del("${s.key}")'>حذف</span></span>`:"");
+     let inner = data.n;
+     if(ADM) inner += `<br><span style='font-size:13px;'><span style='color:#007bff;cursor:pointer' onclick='edt("${s.key}")'>تعديل</span> | <span style='color:#d00;cursor:pointer' onclick='del("${s.key}")'>حذف</span></span>`;
+     d.innerHTML = inner;
      d.onclick=()=>{curst={key:s.key,...data}; showStudentContent();};
      cont.appendChild(d);
    });
@@ -212,7 +275,7 @@ function showStudentContent(){
  document.getElementById("pg").style.display="none";
  document.getElementById("stp").style.display="block";
  document.getElementById("stn").innerText = curst.n;
- document.getElementById("sti").innerHTML = "<b>فقرتك:</b> " + names[curpg] + "<br><br>" + (curst.c||"-");
+ document.getElementById("sti").innerHTML = "<b>فقرتك:</b> " + (curst.sectionTitle || "") + "<br><br>" + (curst.c||"-");
  showDates();
  document.getElementById("date-editor").style.display=ADM? "block":"none";
 }
@@ -242,34 +305,73 @@ function addDate(){
  if(!d) return;
  if(!curst.dates) curst.dates=[];
  curst.dates.push(d);
- db.ref('pgs/'+curpg+'/sts/'+curst.key+'/dates').set(curst.dates);
- document.getElementById("newdate").value="";
- showDates();
+ db.ref('pgs/'+curpg+'/sts/'+curst.key+'/dates').set(curst.dates).then(()=>{
+   document.getElementById("newdate").value="";
+   showDates();
+ }).catch(err=>alert("خطأ بالحفظ: "+err.message));
 }
 
 function removeDate(i){
  if(!ADM) return;
  curst.dates.splice(i,1);
- db.ref('pgs/'+curpg+'/sts/'+curst.key+'/dates').set(curst.dates);
- showDates();
+ db.ref('pgs/'+curpg+'/sts/'+curst.key+'/dates').set(curst.dates).then(()=> showDates() ).catch(err=>alert("خطأ: "+err.message));
 }
 
 // ===== Back buttons =====
 function bck(){document.getElementById("pg").style.display="none";document.getElementById("mn").style.display="block";}
 function bck2(){document.getElementById("stp").style.display="none";document.getElementById("pg").style.display="block";}
 
-// ===== Add student =====
-function opadd(){document.getElementById("adp").style.display="block";document.getElementById("pg").style.display="none";}
+// ===== Add student (فتح النافذة) =====
+function opadd(){
+ tmpDates = []; // تفريغ المصفوفة المؤقتة
+ renderTmpDates();
+ document.getElementById("sn").value = document.getElementById("se").value = document.getElementById("sp").value = document.getElementById("sc").value = "";
+ document.getElementById("sd_single").value = "";
+ document.getElementById("adp").style.display="block";
+ document.getElementById("pg").style.display="none";
+}
 function bckp(){document.getElementById("adp").style.display="none";document.getElementById("pg").style.display="block";}
+
+// مؤقت: إضافة موعد واحد-واحد في واجهة إضافة طالب
+function pushTempDate(){
+ const v = document.getElementById("sd_single").value.trim();
+ if(!v) return;
+ tmpDates.push(v);
+ document.getElementById("sd_single").value = "";
+ renderTmpDates();
+}
+function renderTmpDates(){
+ const box = document.getElementById("sdList");
+ box.innerHTML = "";
+ if(tmpDates.length===0){ box.innerHTML = "<div class='sm'>لم تُضف مواعيد بعد</div>"; return; }
+ tmpDates.forEach((d,i)=>{
+   const div = document.createElement('div');
+   div.className='date-item';
+   div.innerText = d;
+   const btn = document.createElement('button');
+   btn.innerText = 'حذف';
+   btn.onclick = ()=>{ tmpDates.splice(i,1); renderTmpDates(); };
+   div.appendChild(btn);
+   box.appendChild(div);
+ });
+}
+
+// ===== Save new student =====
 function sav(){
- let s={n:document.getElementById("sn").value.trim(),e:document.getElementById("se").value.trim(),p:document.getElementById("sp").value.trim(),c:document.getElementById("sc").value.trim(),dates:(document.getElementById("sd").value.trim().split(","))};
+ let s={n:document.getElementById("sn").value.trim(),e:document.getElementById("se").value.trim(),p:document.getElementById("sp").value.trim(),c:document.getElementById("sc").value.trim(),dates: tmpDates.slice()};
  if(!s.n||!s.e||!s.p){alert("املأ الاسم والإيميل والباسورد");return;}
  let newRef = db.ref('pgs/'+curpg+'/sts').push();
- newRef.set(s);
- document.getElementById("sn").value=document.getElementById("se").value=document.getElementById("sp").value=document.getElementById("sc").value=document.getElementById("sd").value="";
- document.getElementById("adp").style.display="none";
- document.getElementById("pg").style.display="block";
- shsts();
+ // حفظ عنوان القسم داخل بيانات الطالب (اختياري) ليس ضرورياً لكن مفيد للعرض
+ s.sectionTitle = document.getElementById("pgn").innerText || curpg;
+ newRef.set(s).then(()=>{
+   // مسح الحقول بعد الحفظ
+   tmpDates = [];
+   renderTmpDates();
+   document.getElementById("sn").value=document.getElementById("se").value=document.getElementById("sp").value=document.getElementById("sc").value=document.getElementById("sd_single").value="";
+   document.getElementById("adp").style.display="none";
+   document.getElementById("pg").style.display="block";
+   shsts();
+ }).catch(err=>{ alert("خطأ بالحفظ: "+err.message); });
 }
 
 // ===== Edit student =====
@@ -288,26 +390,27 @@ function edt(key){
 }
 
 function svu(){
- let s={n:document.getElementById("esn").value.trim(),e:document.getElementById("ese").value.trim(),p:document.getElementById("esp").value.trim(),c:document.getElementById("esc").value.trim(),dates:(document.getElementById("esd").value.trim().split(","))};
- db.ref('pgs/'+curpg+'/sts/'+edi).set(s);
- document.getElementById("edp").style.display="none";
- document.getElementById("pg").style.display="block";
- shsts();
+ let s={n:document.getElementById("esn").value.trim(),e:document.getElementById("ese").value.trim(),p:document.getElementById("esp").value.trim(),c:document.getElementById("esc").value.trim(),dates:(document.getElementById("esd").value.trim()?document.getElementById("esd").value.trim().split(","):[])};
+ db.ref('pgs/'+curpg+'/sts/'+edi).set(s).then(()=>{
+   document.getElementById("edp").style.display="none";
+   document.getElementById("pg").style.display="block";
+   shsts();
+ }).catch(err=>alert("خطأ بالحفظ: "+err.message));
 }
 
 // ===== Delete student =====
-function del(key){if(!confirm("هل تريد حذف هذا الطالب؟")) return; db.ref('pgs/'+curpg+'/sts/'+key).remove(); shsts();}
+function del(key){if(!confirm("هل تريد حذف هذا الطالب؟")) return; db.ref('pgs/'+curpg+'/sts/'+key).remove().then(()=> shsts() ).catch(err=>alert("خطأ بالحذف: "+err.message));}
 
 // ===== Add new page =====
 function addPage(){
  let name=document.getElementById("newPageName").value.trim();
  if(!name) return;
  let pageKey = name.toLowerCase().replace(/\s+/g,"_");
- db.ref('pgs/'+pageKey).set({sts:[]});
- def.push(pageKey);
- names[pageKey]=name;
- document.getElementById("newPageName").value="";
- shmn();
+ // أنشئ الصفحة و اكتب title حتى تحفظ
+ db.ref('pgs/'+pageKey).set({sts:[], title: name}).then(()=>{
+   document.getElementById("newPageName").value="";
+   shmn();
+ }).catch(err=>alert("خطأ بالحفظ: "+err.message));
 }
 </script>
 </body>
