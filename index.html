@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>الإذاعة</title>
+<style>
+body{margin:0;background:#f2f2f2;font-family:Tahoma,Arial,Sans-Serif;font-size:16px;}
+.ctr{width:90%;max-width:500px;margin:auto;padding:2%;}
+.bx{background:#fff;padding:3%;border-radius:12px;margin-top:2%;box-shadow:0 0.5em 1.5em rgba(0,0,0,0.08);box-sizing:border-box;}
+input,textarea{width:100%;padding:1%;margin-top:2%;border-radius:8px;border:1px solid #ccc;font-size:1em;box-sizing:border-box;}
+button{padding:1%;border:0;border-radius:8px;background:#007bff;color:#fff;cursor:pointer;margin-top:2%;width:100%;font-size:1em;}
+button:hover{background:#005fcc;}
+.tl{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;}
+.add{font-size:2em;cursor:pointer;}
+.it{padding:2%;border:1px solid #e6e6e6;border-radius:8px;margin-top:2%;cursor:pointer;word-break:break-word;}
+.sm{font-size:0.9em;color:#666;margin-top:1%;}
+.date-item{display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding:5px;border:1px solid #ccc;border-radius:6px;}
+.date-item button{width:auto;padding:0 5px;background:#d00;margin:0;font-size:0.8em;}
+@media(max-width:500px){
+ .tl{flex-direction:column;align-items:flex-start;}
+ .add{margin-top:0.5em;}
+}
+</style>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+<div class="ctr">
+
+<!-- تسجيل الدخول -->
+<div id="lg" class="bx">
+ <h3>تسجيل الدخول</h3>
+ <input id="em" placeholder="الإيميل" />
+ <input id="pw" type="password" placeholder="كلمة المرور" />
+ <button onclick="lgf()">دخول</button>
+ <button id="guestBtn" onclick="gst()" style="background:#555">الدخول كزائر</button>
+</div>
+
+<!-- قائمة الفقرات -->
+<div id="mn" style="display:none">
+ <div class="bx">
+  <h2 style="text-align:center">الفقرات</h2>
+  <div id="plist"></div>
+  <div id="addNewPage" style="display:none;margin-top:10px;">
+    <input id="newPageName" placeholder="اسم الفقرة الجديدة" />
+    <button onclick="addPage()">إضافة فقرة</button>
+  </div>
+ </div>
+</div>
+
+<!-- صفحة الفقرة -->
+<div id="pg" style="display:none">
+ <div class="bx">
+  <div class="tl">
+   <h2 id="pgn"></h2>
+   <div id="ad" class="add" onclick="opadd()" style="display:none">＋</div>
+  </div>
+  <div id="st"></div>
+  <button onclick="bck()">رجوع</button>
+ </div>
+</div>
+
+<!-- عرض محتوى الطالب -->
+<div id="stp" style="display:none">
+ <div class="bx">
+  <h2 id="stn"></h2>
+  <div id="sti" class="sm"></div>
+  <!-- إدخال المواعيد لمحمد هشام فقط -->
+  <div id="date-editor" style="margin-top:10px; display:none;">
+    <input id="newdate" placeholder="أدخل موعد بصيغة يوم/شهر" />
+    <button onclick="addDate()">إضافة موعد</button>
+  </div>
+  <div id="datesList"></div>
+  <button onclick="bck2()" style="margin-top:10px;">رجوع</button>
+ </div>
+</div>
+
+<!-- إضافة طالب -->
+<div id="adp" style="display:none">
+ <div class="bx">
+  <h3>إضافة طالب</h3>
+  <input id="sn" placeholder="اسم الطالب" />
+  <input id="se" placeholder="الإيميل" />
+  <input id="sp" placeholder="الباسورد" />
+  <textarea id="sc" placeholder="محتوى فقرته"></textarea>
+  <input id="sd" placeholder="المواعيد مفصولة بفواصل (اليوم/الشهر)" />
+  <button onclick="sav()">إضافة</button>
+  <button onclick="bckp()" style="background:#aaa">رجوع</button>
+ </div>
+</div>
+
+<!-- تعديل طالب -->
+<div id="edp" style="display:none">
+ <div class="bx ctr">
+  <h3>تعديل طالب</h3>
+  <input id="esn" placeholder="اسم الطالب" />
+  <input id="ese" placeholder="الإيميل" />
+  <input id="esp" placeholder="الباسورد" />
+  <textarea id="esc" placeholder="محتوى فقرته"></textarea>
+  <input id="esd" placeholder="المواعيد مفصولة بفواصل (اليوم/الشهر)" />
+  <button onclick="svu()">حفظ التعديل</button>
+  <button onclick="bcke()" style="background:#aaa">رجوع</button>
+ </div>
+</div>
+
+<script>
+// Firebase setup
+const firebaseConfig = {
+ apiKey: "AIzaSyAuNj9CbmYfolZwmviheiwzaW9qYCHEUA8",
+ authDomain: "radio-app-7fed6.firebaseapp.com",
+ databaseURL: "https://radio-app-7fed6-default-rtdb.firebaseio.com",
+ projectId: "radio-app-7fed6",
+ storageBucket: "radio-app-7fed6.firebasestorage.app",
+ messagingSenderId: "696558044742",
+ appId: "1:696558044742:web:3d1935ccd4393431326c47",
+ measurementId: "G-JS23NJMVK1"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const ADM_E="Mohamed.hesham@web", ADM_P="Mohamed.hesham";
+let ADM=false;
+const def=["quran","presentation","hikma","maqal","info","qs","hadith","anthem"];
+const names={quran:"القرآن",presentation:"التقديم",hikma:"الحكمة",maqal:"المقال",info:"هل تعلم؟",qs:"الأسئلة",hadith:"الحديث",anthem:"النشيد الوطني"};
+let curpg="", curst=null, edi="";
+
+// ===== Initialize Database =====
+function init(){
+ def.forEach(p=>{
+   let ref = db.ref('pgs/'+p);
+   ref.once('value', snap=>{
+     if(!snap.exists()) ref.set({sts:[]});
+   });
+ });
+}
+init();
+
+// ===== Login & Guest =====
+function lgf(){
+ let e=document.getElementById("em").value.trim(), p=document.getElementById("pw").value.trim();
+ if(e===ADM_E && p===ADM_P){
+   ADM=true;
+   document.getElementById("guestBtn").style.display="none";
+   shmn();
+   return;
+ }
+ db.ref('pgs').once('value', snap=>{
+   let found=false;
+   def.forEach(k=>{
+     snap.child(k).child('sts').forEach(s=>{
+       if(s.val().e===e && s.val().p===p){
+         ADM=false;
+         curpg=k;
+         curst={key:s.key,...s.val()};
+         document.getElementById("lg").style.display="none";
+         document.getElementById("guestBtn").style.display="none";
+         showStudentContent();
+         found=true;
+       }
+     });
+   });
+   if(!found) alert("خطأ في تسجيل الدخول");
+ });
+}
+
+function gst(){ADM=false; shmn();}
+
+// ===== Show menu =====
+function shmn(){
+ document.getElementById("lg").style.display="none";
+ document.getElementById("mn").style.display="block";
+ let pl=document.getElementById("plist"); pl.innerHTML="";
+ def.forEach(k=>{
+   let d=document.createElement("div");
+   d.className="it";
+   d.innerText=names[k];
+   d.onclick=()=>op(k);
+   pl.appendChild(d);
+ });
+ if(ADM) document.getElementById("addNewPage").style.display="block";
+}
+
+// ===== Open page =====
+function op(k){
+ curpg=k;
+ document.getElementById("mn").style.display="none";
+ document.getElementById("pg").style.display="block";
+ document.getElementById("pgn").innerText=names[k];
+ document.getElementById("ad").style.display=ADM?"block":"none";
+ shsts();
+}
+
+// ===== Show students in page =====
+function shsts(){
+ let cont=document.getElementById("st");  
+ cont.innerHTML="";
+ db.ref('pgs/'+curpg+'/sts').once('value', snap=>{
+   snap.forEach((s)=>{
+     let data = s.val();
+     let d=document.createElement("div");
+     d.className="it";
+     d.innerHTML = data.n + (ADM?`<br><span style='font-size:13px;'><span style='color:#007bff;cursor:pointer' onclick='edt("${s.key}")'>تعديل</span> | <span style='color:#d00;cursor:pointer' onclick='del("${s.key}")'>حذف</span></span>`:"");
+     d.onclick=()=>{curst={key:s.key,...data}; showStudentContent();};
+     cont.appendChild(d);
+   });
+ });
+}
+
+// ===== Show student content =====
+function showStudentContent(){
+ document.getElementById("mn").style.display="none";
+ document.getElementById("pg").style.display="none";
+ document.getElementById("stp").style.display="block";
+ document.getElementById("stn").innerText = curst.n;
+ document.getElementById("sti").innerHTML = "<b>فقرتك:</b> " + names[curpg] + "<br><br>" + (curst.c||"-");
+ showDates();
+ document.getElementById("date-editor").style.display=ADM? "block":"none";
+}
+
+// ===== Dates =====
+function showDates(){
+ let listDiv = document.getElementById("datesList");
+ listDiv.innerHTML="";
+ if(!curst.dates) curst.dates=[];
+ curst.dates.forEach((d,i)=>{
+   let div = document.createElement("div");
+   div.className="date-item";
+   div.innerText = d;
+   if(ADM){
+     let btn = document.createElement("button");
+     btn.innerText="حذف";
+     btn.onclick = ()=>{ removeDate(i); };
+     div.appendChild(btn);
+   }
+   listDiv.appendChild(div);
+ });
+}
+
+function addDate(){
+ if(!ADM) return;
+ let d=document.getElementById("newdate").value.trim();
+ if(!d) return;
+ if(!curst.dates) curst.dates=[];
+ curst.dates.push(d);
+ db.ref('pgs/'+curpg+'/sts/'+curst.key+'/dates').set(curst.dates);
+ document.getElementById("newdate").value="";
+ showDates();
+}
+
+function removeDate(i){
+ if(!ADM) return;
+ curst.dates.splice(i,1);
+ db.ref('pgs/'+curpg+'/sts/'+curst.key+'/dates').set(curst.dates);
+ showDates();
+}
+
+// ===== Back buttons =====
+function bck(){document.getElementById("pg").style.display="none";document.getElementById("mn").style.display="block";}
+function bck2(){document.getElementById("stp").style.display="none";document.getElementById("pg").style.display="block";}
+
+// ===== Add student =====
+function opadd(){document.getElementById("adp").style.display="block";document.getElementById("pg").style.display="none";}
+function bckp(){document.getElementById("adp").style.display="none";document.getElementById("pg").style.display="block";}
+function sav(){
+ let s={n:document.getElementById("sn").value.trim(),e:document.getElementById("se").value.trim(),p:document.getElementById("sp").value.trim(),c:document.getElementById("sc").value.trim(),dates:(document.getElementById("sd").value.trim().split(","))};
+ if(!s.n||!s.e||!s.p){alert("املأ الاسم والإيميل والباسورد");return;}
+ let newRef = db.ref('pgs/'+curpg+'/sts').push();
+ newRef.set(s);
+ document.getElementById("sn").value=document.getElementById("se").value=document.getElementById("sp").value=document.getElementById("sc").value=document.getElementById("sd").value="";
+ document.getElementById("adp").style.display="none";
+ document.getElementById("pg").style.display="block";
+ shsts();
+}
+
+// ===== Edit student =====
+function edt(key){
+ edi=key;
+ db.ref('pgs/'+curpg+'/sts/'+key).once('value', snap=>{
+   let s = snap.val();
+   document.getElementById("esn").value=s.n;
+   document.getElementById("ese").value=s.e;
+   document.getElementById("esp").value=s.p;
+   document.getElementById("esc").value=s.c;
+   document.getElementById("esd").value=(s.dates||[]).join(",");
+   document.getElementById("pg").style.display="none";
+   document.getElementById("edp").style.display="block";
+ });
+}
+
+function svu(){
+ let s={n:document.getElementById("esn").value.trim(),e:document.getElementById("ese").value.trim(),p:document.getElementById("esp").value.trim(),c:document.getElementById("esc").value.trim(),dates:(document.getElementById("esd").value.trim().split(","))};
+ db.ref('pgs/'+curpg+'/sts/'+edi).set(s);
+ document.getElementById("edp").style.display="none";
+ document.getElementById("pg").style.display="block";
+ shsts();
+}
+
+// ===== Delete student =====
+function del(key){if(!confirm("هل تريد حذف هذا الطالب؟")) return; db.ref('pgs/'+curpg+'/sts/'+key).remove(); shsts();}
+
+// ===== Add new page =====
+function addPage(){
+ let name=document.getElementById("newPageName").value.trim();
+ if(!name) return;
+ let pageKey = name.toLowerCase().replace(/\s+/g,"_");
+ db.ref('pgs/'+pageKey).set({sts:[]});
+ def.push(pageKey);
+ names[pageKey]=name;
+ document.getElementById("newPageName").value="";
+ shmn();
+}
+</script>
+</body>
+</html>
